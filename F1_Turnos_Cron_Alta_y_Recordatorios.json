@@ -1,0 +1,446 @@
+{
+  "name": "WF1 - Turnos (Cron) Alta + Recordatorios",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 10,
+              "unit": "minutes"
+            }
+          ]
+        }
+      },
+      "id": "a1c2f3a4-1111-4b1a-8c1a-000000000001",
+      "name": "Cron (cada 10m)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [300, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "mode": "id",
+          "value": "PUT_YOUR_CALENDAR_ID"
+        },
+        "returnAll": true,
+        "timeMin": "={{$now.minus({ minutes: 30 }).toISO()}}",
+        "timeMax": "={{$now.plus({ days: 60 }).toISO()}}"
+      },
+      "id": "a1c2f3a4-1111-4b1a-8c1a-000000000002",
+      "name": "GCal GetMany (now-30m..now+60d)",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [520, 180],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "name": "PUT_GOOGLE_CALENDAR_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "operation": "lookup",
+        "documentId": {
+          "mode": "id",
+          "value": "PUT_YOUR_SHEET_ID"
+        },
+        "sheetName": {
+          "mode": "name",
+          "value": "Turnos"
+        },
+        "lookupColumn": "eventId",
+        "lookupValue": "={{$json.id}}"
+      },
+      "id": "a1c2f3a4-1111-4b1a-8c1a-000000000003",
+      "name": "Sheets Lookup eventId",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [760, 180],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "PUT_GOOGLE_SHEETS_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "string": [
+            {
+              "value1": "={{$json.eventId}}",
+              "operation": "isEmpty"
+            }
+          ]
+        }
+      },
+      "id": "a1c2f3a4-1111-4b1a-8c1a-000000000004",
+      "name": "IF not found (nuevo evento)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [980, 180]
+    },
+    {
+      "parameters": {
+        "functionCode": "/*\nParseEvent: adapta esto a como viene el booking.\nRecomendación: en la descripción del evento, forzar algo así:\nNombre: Juan Perez\nTelefono: +54911XXXXXXX\nMotivo: Limpieza\n\nSi no podés, dejá solo teléfono obligatorio.\n*/\n\nconst ev = $input.first().json;\nconst desc = (ev.description || '').toString();\n\nfunction findPhone(text) {\n  // busca +54..., o números largos; normalizá luego.\n  const m = text.match(/(\\+?\\d[\\d\\s\\-]{8,})/);\n  return m ? m[1].replace(/[\\s\\-]/g, '') : '';\n}\n\nfunction findField(label, text) {\n  const re = new RegExp(label + '\\\\s*[:=]\\\\s*(.+)', 'i');\n  const m = text.match(re);\n  return m ? m[1].trim() : '';\n}\n\nconst phoneRaw = findField('Telefono|Teléfono|WhatsApp', desc) || findPhone(desc);\nconst patient = findField('Nombre|Paciente', desc) || (ev.summary || 'Paciente');\nconst reason = findField('Motivo|Consulta', desc) || '';\n\n// Normalización simple E.164 (AR): si empieza con 00 -> +\nlet phone = phoneRaw;\nif (phone.startsWith('00')) phone = '+' + phone.slice(2);\nif (!phone.startsWith('+') && phone.length >= 10) {\n  // Placeholder: si querés, forzá +54\n  // phone = '+54' + phone;\n}\n\nreturn [{\n  json: {\n    eventId: ev.id,\n    start: ev.start?.dateTime || ev.start?.date || null,\n    end: ev.end?.dateTime || ev.end?.date || null,\n    patient_name: patient,\n    phone_e164: phone,\n    reason,\n    status: 'booked',\n    reminder_48_sent: false,\n    last_whatsapp_at: null,\n    notes_internal: ''\n  }\n}];"
+      },
+      "id": "a1c2f3a4-1111-4b1a-8c1a-000000000005",
+      "name": "Function ParseEvent (name, phone, reason)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [1210, 180]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.phone_e164}}",
+              "operation": "regex",
+              "value2": "^\\+\\d{10,15}$"
+            }
+          ]
+        }
+      },
+      "id": "a1c2f3a4-1111-4b1a-8c1a-000000000006",
+      "name": "IF phone valid (E.164)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1440, 180]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "operation": "append",
+        "documentId": {
+          "mode": "id",
+          "value": "PUT_YOUR_SHEET_ID"
+        },
+        "sheetName": {
+          "mode": "name",
+          "value": "Turnos"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "eventId": "={{$json.eventId}}",
+            "start": "={{$json.start}}",
+            "end": "={{$json.end}}",
+            "patient_name": "={{$json.patient_name}}",
+            "phone_e164": "={{$json.phone_e164}}",
+            "reason": "={{$json.reason}}",
+            "status": "={{$json.status}}",
+            "reminder_48_sent": "={{$json.reminder_48_sent}}",
+            "last_whatsapp_at": "={{$json.last_whatsapp_at}}",
+            "notes_internal": "={{$json.notes_internal}}"
+          }
+        }
+      },
+      "id": "a1c2f3a4-1111-4b1a-8c1a-000000000007",
+      "name": "Sheets Append (status=booked)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1680, 120],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "PUT_GOOGLE_SHEETS_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.WA_PHONE_NUMBER_ID || 'PUT_PHONE_NUMBER_ID' }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{'Bearer ' + ($env.WA_ACCESS_TOKEN || 'PUT_ACCESS_TOKEN')}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": {{$json.phone_e164.replace('+','')}},\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"confirmacion_turno\",\n    \"language\": {\"code\": \"es_AR\"},\n    \"components\": [\n      {\n        \"type\": \"body\",\n        \"parameters\": [\n          {\"type\": \"text\", \"text\": {{$json.patient_name}}},\n          {\"type\": \"text\", \"text\": {{$json.start}}}\n        ]\n      }\n    ]\n  }\n}"
+      },
+      "id": "a1c2f3a4-1111-4b1a-8c1a-000000000008",
+      "name": "WhatsApp SendTemplate confirmacion",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1900, 120],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "PUT_WA_HTTP_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "/* Notificación admin + log. Adaptá canal: WhatsApp a tu número / Gmail / etc. */\nreturn [{ json: { level: 'error', msg: 'Evento sin teléfono válido', data: $input.first().json } }];"
+      },
+      "id": "a1c2f3a4-1111-4b1a-8c1a-000000000009",
+      "name": "Notify admin + log (alta inválida)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [1680, 260]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "operation": "read",
+        "documentId": {
+          "mode": "id",
+          "value": "PUT_YOUR_SHEET_ID"
+        },
+        "sheetName": {
+          "mode": "name",
+          "value": "Turnos"
+        },
+        "returnAll": true
+      },
+      "id": "a1c2f3a4-1111-4b1a-8c1a-000000000010",
+      "name": "Sheets Read (all)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [520, 520],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "PUT_GOOGLE_SHEETS_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "/*\nFiltra turnos para recordatorio 48h.\nRegla: status booked/pending, reminder_48_sent=false, start en ventana 48h ±10m\n*/\n\nconst now = new Date();\nconst target = new Date(now.getTime() + 48*60*60*1000);\nconst windowMin = new Date(target.getTime() - 10*60*1000);\nconst windowMax = new Date(target.getTime() + 10*60*1000);\n\nfunction parseDt(v) {\n  if (!v) return null;\n  const d = new Date(v);\n  return isNaN(d.getTime()) ? null : d;\n}\n\nconst out = [];\nfor (const item of $input.all()) {\n  const r = item.json;\n  const st = (r.status || '').toLowerCase();\n  const sent = (r.reminder_48_sent === true || r.reminder_48_sent === 'TRUE' || r.reminder_48_sent === 'true');\n  const d = parseDt(r.start);\n  if (!d) continue;\n  if ((st === 'booked' || st === 'pending') && !sent && d >= windowMin && d <= windowMax) {\n    out.push({ json: r });\n  }\n}\nreturn out;"
+      },
+      "id": "a1c2f3a4-1111-4b1a-8c1a-000000000011",
+      "name": "Function Filter 48h",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [760, 520]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.WA_PHONE_NUMBER_ID || 'PUT_PHONE_NUMBER_ID' }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{'Bearer ' + ($env.WA_ACCESS_TOKEN || 'PUT_ACCESS_TOKEN')}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": {{$json.phone_e164.replace('+','')}},\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"recordatorio_48h\",\n    \"language\": {\"code\": \"es_AR\"}\n  }\n}"
+      },
+      "id": "a1c2f3a4-1111-4b1a-8c1a-000000000012",
+      "name": "WhatsApp SendTemplate recordatorio_48h",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1000, 520],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "PUT_WA_HTTP_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "operation": "update",
+        "documentId": {
+          "mode": "id",
+          "value": "PUT_YOUR_SHEET_ID"
+        },
+        "sheetName": {
+          "mode": "name",
+          "value": "Turnos"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "eventId": "={{$json.eventId}}",
+            "reminder_48_sent": "={{true}}",
+            "last_whatsapp_at": "={{$now.toISO()}}"
+          }
+        },
+        "options": {
+          "updateBy": "eventId"
+        }
+      },
+      "id": "a1c2f3a4-1111-4b1a-8c1a-000000000013",
+      "name": "Sheets Update reminder_48_sent=true",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1240, 520],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "PUT_GOOGLE_SHEETS_CREDENTIAL_NAME"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cron (cada 10m)": {
+      "main": [
+        [
+          {
+            "node": "GCal GetMany (now-30m..now+60d)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sheets Read (all)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GCal GetMany (now-30m..now+60d)": {
+      "main": [
+        [
+          {
+            "node": "Sheets Lookup eventId",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets Lookup eventId": {
+      "main": [
+        [
+          {
+            "node": "IF not found (nuevo evento)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF not found (nuevo evento)": {
+      "main": [
+        [
+          {
+            "node": "Function ParseEvent (name, phone, reason)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Function ParseEvent (name, phone, reason)": {
+      "main": [
+        [
+          {
+            "node": "IF phone valid (E.164)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF phone valid (E.164)": {
+      "main": [
+        [
+          {
+            "node": "Sheets Append (status=booked)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify admin + log (alta inválida)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets Append (status=booked)": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp SendTemplate confirmacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets Read (all)": {
+      "main": [
+        [
+          {
+            "node": "Function Filter 48h",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Function Filter 48h": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp SendTemplate recordatorio_48h",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp SendTemplate recordatorio_48h": {
+      "main": [
+        [
+          {
+            "node": "Sheets Update reminder_48_sent=true",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "00000000-0000-0000-0000-000000000000",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

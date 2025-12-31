@@ -1,0 +1,545 @@
+﻿{
+  "name": "WF2 - WhatsApp Inbound (Confirm/Cancel/Reschedule)",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "whatsapp-inbound",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "b1c2f3a4-2222-4b1a-8c1a-000000000001",
+      "name": "Webhook (WhatsApp Inbound)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [300, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "/*\nNormalizeInbound: ajustá según payload real de tu proveedor.\nPara WhatsApp Cloud API, el payload incluye entry/changes/value/messages.\nAcá dejamos un parser tolerante + placeholders.\n\nEsperamos producir:\n- phone_e164 (con +)\n- action: CONFIRM | CANCEL | RESCHEDULE\n*/\n\nconst body = $input.first().json;\n\nfunction dig(obj, path) {\n  return path.reduce((a,k) => (a && a[k] !== undefined) ? a[k] : undefined, obj);\n}\n\nconst msg = dig(body, ['entry',0,'changes',0,'value','messages',0]) || body.message || {};\nconst from = msg.from || body.from || '';\n\n// Quick reply button id (Cloud API): msg.button?.payload OR msg.interactive?.button_reply?.id\nconst btnId = dig(msg, ['interactive','button_reply','id']) || dig(msg, ['button','payload']) || body.button_id || '';\n\nlet action = '';\nif (/confirm/i.test(btnId)) action = 'CONFIRM';\nelse if (/cancel/i.test(btnId)) action = 'CANCEL';\nelse if (/resched|reprog/i.test(btnId)) action = 'RESCHEDULE';\nelse {\n  const txt = (msg.text?.body || body.text || '').toString();\n  if (/confirm/i.test(txt)) action = 'CONFIRM';\n  if (/cancel/i.test(txt)) action = 'CANCEL';\n  if (/reprog|reprogram|resched/i.test(txt)) action = 'RESCHEDULE';\n}\n\n// Normaliza teléfono (Cloud API trae sin '+', ej: '54911...')\nlet phone = from.toString().trim();\nif (phone && !phone.startsWith('+')) phone = '+' + phone;\n\nreturn [{ json: { phone_e164: phone, action } }];"
+      },
+      "id": "b1c2f3a4-2222-4b1a-8c1a-000000000002",
+      "name": "Function NormalizeInbound",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [540, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "operation": "read",
+        "documentId": {
+          "mode": "id",
+          "value": "PUT_YOUR_SHEET_ID"
+        },
+        "sheetName": {
+          "mode": "name",
+          "value": "Turnos"
+        },
+        "returnAll": true
+      },
+      "id": "b1c2f3a4-2222-4b1a-8c1a-000000000003",
+      "name": "Sheets Read (all turnos)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [780, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "PUT_GOOGLE_SHEETS_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "/*\nLookup next appointment by phone (status booked/pending) y más cercano en el futuro.\n*/\n\nconst phone = $node['Function NormalizeInbound'].json.phone_e164;\nconst now = new Date();\n\nfunction parseDt(v) {\n  if (!v) return null;\n  const d = new Date(v);\n  return isNaN(d.getTime()) ? null : d;\n}\n\nlet best = null;\nlet bestDt = null;\n\nfor (const item of $input.all()) {\n  const r = item.json;\n  if ((r.phone_e164 || '').toString().trim() !== phone) continue;\n  const st = (r.status || '').toLowerCase();\n  if (!(st === 'booked' || st === 'pending')) continue;\n  const d = parseDt(r.start);\n  if (!d || d <= now) continue;\n  if (!bestDt || d < bestDt) {\n    bestDt = d;\n    best = r;\n  }\n}\n\nif (!best) {\n  return [{ json: { error: true, reason: 'NO_UPCOMING_APPOINTMENT', phone_e164: phone } }];\n}\n\nreturn [{ json: { ...best, phone_e164: phone, action: $node['Function NormalizeInbound'].json.action } }];"
+      },
+      "id": "b1c2f3a4-2222-4b1a-8c1a-000000000004",
+      "name": "Function PickNextAppointment",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [1020, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json.action}}",
+                    "operation": "equals",
+                    "value2": "CONFIRM"
+                  }
+                ]
+              },
+              "outputKey": "confirm"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json.action}}",
+                    "operation": "equals",
+                    "value2": "CANCEL"
+                  }
+                ]
+              },
+              "outputKey": "cancel"
+            },
+            {
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json.action}}",
+                    "operation": "equals",
+                    "value2": "RESCHEDULE"
+                  }
+                ]
+              },
+              "outputKey": "reschedule"
+            }
+          ]
+        },
+        "fallbackOutput": "other"
+      },
+      "id": "b1c2f3a4-2222-4b1a-8c1a-000000000005",
+      "name": "Switch action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "operation": "update",
+        "documentId": {
+          "mode": "id",
+          "value": "PUT_YOUR_SHEET_ID"
+        },
+        "sheetName": {
+          "mode": "name",
+          "value": "Turnos"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "eventId": "={{$json.eventId}}",
+            "status": "confirmed",
+            "notes_internal": "={{'confirmed_by_whatsapp ' + $now.toISO()}}"
+          }
+        },
+        "options": {
+          "updateBy": "eventId"
+        }
+      },
+      "id": "b1c2f3a4-2222-4b1a-8c1a-000000000006",
+      "name": "Sheets Update confirmed",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1490, 140],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "PUT_GOOGLE_SHEETS_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.WA_PHONE_NUMBER_ID || 'PUT_PHONE_NUMBER_ID' }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{'Bearer ' + ($env.WA_ACCESS_TOKEN || 'PUT_ACCESS_TOKEN')}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": {{$json.phone_e164.replace('+','')}},\n  \"type\": \"text\",\n  \"text\": {\"body\": \"✅ Turno confirmado. Te esperamos.\"}\n}"
+      },
+      "id": "b1c2f3a4-2222-4b1a-8c1a-000000000007",
+      "name": "WhatsApp Send Confirmado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1710, 140],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "PUT_WA_HTTP_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "/*\nCheck 24h rule. Produce allow=true/false\n*/\nconst start = new Date($json.start);\nconst now = new Date();\nconst ms = start.getTime() - now.getTime();\nconst allow = ms >= 24*60*60*1000;\nreturn [{ json: { ...$json, allowCancelReschedule: allow } }];"
+      },
+      "id": "b1c2f3a4-2222-4b1a-8c1a-000000000008",
+      "name": "Function Check24h",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [1490, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.allowCancelReschedule}}",
+              "operation": "isTrue"
+            }
+          ]
+        }
+      },
+      "id": "b1c2f3a4-2222-4b1a-8c1a-000000000009",
+      "name": "IF allow (>=24h)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1710, 300]
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "calendar": {
+          "mode": "id",
+          "value": "PUT_YOUR_CALENDAR_ID"
+        },
+        "eventId": "={{$json.eventId}}"
+      },
+      "id": "b1c2f3a4-2222-4b1a-8c1a-000000000010",
+      "name": "GCal Delete eventId",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [1930, 240],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "name": "PUT_GOOGLE_CALENDAR_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "operation": "update",
+        "documentId": {
+          "mode": "id",
+          "value": "PUT_YOUR_SHEET_ID"
+        },
+        "sheetName": {
+          "mode": "name",
+          "value": "Turnos"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "eventId": "={{$json.eventId}}",
+            "status": "cancelled",
+            "notes_internal": "={{'cancelled_by_whatsapp ' + $now.toISO()}}"
+          }
+        },
+        "options": {
+          "updateBy": "eventId"
+        }
+      },
+      "id": "b1c2f3a4-2222-4b1a-8c1a-000000000011",
+      "name": "Sheets Update cancelled",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [2150, 240],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "PUT_GOOGLE_SHEETS_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.WA_PHONE_NUMBER_ID || 'PUT_PHONE_NUMBER_ID' }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{'Bearer ' + ($env.WA_ACCESS_TOKEN || 'PUT_ACCESS_TOKEN')}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": {{$json.phone_e164.replace('+','')}},\n  \"type\": \"text\",\n  \"text\": {\"body\": \"❌ Turno cancelado. Gracias por avisar.\"}\n}"
+      },
+      "id": "b1c2f3a4-2222-4b1a-8c1a-000000000012",
+      "name": "WhatsApp Send Cancelado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2370, 240],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "PUT_WA_HTTP_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.WA_PHONE_NUMBER_ID || 'PUT_PHONE_NUMBER_ID' }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{'Bearer ' + ($env.WA_ACCESS_TOKEN || 'PUT_ACCESS_TOKEN')}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": {{$json.phone_e164.replace('+','')}},\n  \"type\": \"text\",\n  \"text\": {\"body\": \"⚠️ No se puede cancelar/reprogramar con menos de 24 hs. Por favor contactanos.\"}\n}"
+      },
+      "id": "b1c2f3a4-2222-4b1a-8c1a-000000000013",
+      "name": "WhatsApp Send No se puede <24h",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1930, 380],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "PUT_WA_HTTP_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.WA_PHONE_NUMBER_ID || 'PUT_PHONE_NUMBER_ID' }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{'Bearer ' + ($env.WA_ACCESS_TOKEN || 'PUT_ACCESS_TOKEN')}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": {{$json.phone_e164.replace('+','')}},\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"reprogramar_link\",\n    \"language\": {\"code\": \"es_AR\"},\n    \"components\": [\n      {\n        \"type\": \"body\",\n        \"parameters\": [\n          {\"type\": \"text\", \"text\": \"PUT_BOOKING_LINK_HERE\"}\n        ]\n      }\n    ]\n  }\n}"
+      },
+      "id": "b1c2f3a4-2222-4b1a-8c1a-000000000014",
+      "name": "WhatsApp SendTemplate reprogramar_link",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2370, 520],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "PUT_WA_HTTP_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "operation": "update",
+        "documentId": {
+          "mode": "id",
+          "value": "PUT_YOUR_SHEET_ID"
+        },
+        "sheetName": {
+          "mode": "name",
+          "value": "Turnos"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "eventId": "={{$json.eventId}}",
+            "status": "reschedule_requested",
+            "notes_internal": "={{'reschedule_requested_by_whatsapp ' + $now.toISO()}}"
+          }
+        },
+        "options": {
+          "updateBy": "eventId"
+        }
+      },
+      "id": "b1c2f3a4-2222-4b1a-8c1a-000000000015",
+      "name": "Sheets Update reschedule_requested",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [2150, 520],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "name": "PUT_GOOGLE_SHEETS_CREDENTIAL_NAME"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook (WhatsApp Inbound)": {
+      "main": [
+        [
+          {
+            "node": "Function NormalizeInbound",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Function NormalizeInbound": {
+      "main": [
+        [
+          {
+            "node": "Sheets Read (all turnos)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets Read (all turnos)": {
+      "main": [
+        [
+          {
+            "node": "Function PickNextAppointment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Function PickNextAppointment": {
+      "main": [
+        [
+          {
+            "node": "Switch action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch action": {
+      "main": [
+        [
+          {
+            "node": "Sheets Update confirmed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Function Check24h",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Function Check24h",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Sheets Update confirmed": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Send Confirmado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Function Check24h": {
+      "main": [
+        [
+          {
+            "node": "IF allow (>=24h)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF allow (>=24h)": {
+      "main": [
+        [
+          {
+            "node": "GCal Delete eventId",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "WhatsApp Send No se puede <24h",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GCal Delete eventId": {
+      "main": [
+        [
+          {
+            "node": "Sheets Update cancelled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets Update cancelled": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Send Cancelado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "00000000-0000-0000-0000-000000000000",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

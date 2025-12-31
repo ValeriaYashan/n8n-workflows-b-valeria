@@ -1,0 +1,177 @@
+{
+  "name": "Inventario - Alerta stock < 10 (Sheets Hoja1 -> Gmail)",
+  "nodes": [
+    {
+      "parameters": {
+        "event": "rowUpdated",
+        "documentId": "1H7LQoqIRiw9U9SRZJNcupjJ7q0vgFJuBheI1rKjyiow",
+        "sheetName": "Hoja1"
+      },
+      "id": "a0000000-0000-4000-8000-000000000001",
+      "name": "Google Sheets Trigger",
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [240, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\nfunction toBoolES(v) {\n  if (v === true || v === false) return v;\n  if (v === undefined || v === null) return false;\n  const s = String(v).trim().toLowerCase();\n  if (['verdadero','true','1','yes','y','si','sí'].includes(s)) return true;\n  if (['falso','false','0','no','n'].includes(s)) return false;\n  return false;\n}\n\nconst stockRaw = item.Stock ?? item.stock;\nconst stock = Number(String(stockRaw ?? '').replace(',', '.'));\n\nreturn [{\n  json: {\n    ...item,\n    Producto: (item.Producto ?? '').toString().trim(),\n    Stock: Number.isFinite(stock) ? stock : 0,\n    threshold: 10,\n    alertSent: toBoolES(item['Alerta Enviada']),\n    mailResponsable: (item['Mail responsable'] ?? '').toString().trim(),\n    rowNumber: item.rowNumber\n  }\n}];"
+      },
+      "id": "a0000000-0000-4000-8000-000000000002",
+      "name": "Code - Normalizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 240]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.Stock < $json.threshold && !$json.alertSent}}",
+              "operation": "isTrue"
+            }
+          ]
+        }
+      },
+      "id": "a0000000-0000-4000-8000-000000000003",
+      "name": "IF - Stock Bajo y Sin Alerta",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [720, 240]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "toList": "={{$json.mailResponsable}}",
+        "subject": "={{'Alerta de stock bajo: ' + ($json.Producto || 'Producto')}}",
+        "message": "={{'Hola\\n\\nStock bajo detectado.\\n\\nProducto: ' + ($json.Producto || '-') + '\\nStock actual: ' + $json.Stock + '\\nUmbral: ' + $json.threshold + '\\n\\nPor favor, revisar reposición.\\n'}}"
+      },
+      "id": "a0000000-0000-4000-8000-000000000004",
+      "name": "Gmail - Enviar Alerta",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [960, 180],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{!!$json.error}}",
+              "operation": "isTrue"
+            }
+          ]
+        }
+      },
+      "id": "a0000000-0000-4000-8000-000000000005",
+      "name": "IF - Error Gmail",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1200, 180]
+    },
+    {
+      "parameters": {
+        "documentId": "1H7LQoqIRiw9U9SRZJNcupjJ7q0vgFJuBheI1rKjyiow",
+        "sheetName": "Hoja1",
+        "operation": "update",
+        "rowNumber": "={{$json.rowNumber}}",
+        "dataToSend": {
+          "Alerta Enviada": "Verdadero"
+        }
+      },
+      "id": "a0000000-0000-4000-8000-000000000006",
+      "name": "Google Sheets - Marcar Alerta",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1440, 180],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{!!$json.error}}",
+              "operation": "isTrue"
+            }
+          ]
+        }
+      },
+      "id": "a0000000-0000-4000-8000-000000000007",
+      "name": "IF - Error Update",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1680, 180]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "toList": "valeriayashan@gmail.com",
+        "subject": "Falla workflow Inventario (Gmail)",
+        "message": "={{'Error enviando alerta de stock.\\n\\nProducto: ' + ($json.Producto || '-') + '\\nStock: ' + $json.Stock + '\\nrowNumber: ' + $json.rowNumber + '\\n\\nDetalle error: ' + JSON.stringify($json.error)}}"
+      },
+      "id": "a0000000-0000-4000-8000-000000000008",
+      "name": "Gmail - Notificar Falla (Admin)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [1440, 360]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "toList": "valeriayashan@gmail.com",
+        "subject": "Falla workflow Inventario (Sheets Update)",
+        "message": "={{'Error actualizando Google Sheets luego de enviar alerta.\\n\\nProducto: ' + ($json.Producto || '-') + '\\nStock: ' + $json.Stock + '\\nrowNumber: ' + $json.rowNumber + '\\n\\nDetalle error: ' + JSON.stringify($json.error)}}"
+      },
+      "id": "a0000000-0000-4000-8000-000000000009",
+      "name": "Gmail - Notificar Falla Update (Admin)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [1920, 360]
+    }
+  ],
+  "connections": {
+    "Google Sheets Trigger": {
+      "main": [[{ "node": "Code - Normalizar", "type": "main", "index": 0 }]]
+    },
+    "Code - Normalizar": {
+      "main": [[{ "node": "IF - Stock Bajo y Sin Alerta", "type": "main", "index": 0 }]]
+    },
+    "IF - Stock Bajo y Sin Alerta": {
+      "main": [
+        [{ "node": "Gmail - Enviar Alerta", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Gmail - Enviar Alerta": {
+      "main": [[{ "node": "IF - Error Gmail", "type": "main", "index": 0 }]]
+    },
+    "IF - Error Gmail": {
+      "main": [
+        [{ "node": "Gmail - Notificar Falla (Admin)", "type": "main", "index": 0 }],
+        [{ "node": "Google Sheets - Marcar Alerta", "type": "main", "index": 0 }]
+      ]
+    },
+    "Google Sheets - Marcar Alerta": {
+      "main": [[{ "node": "IF - Error Update", "type": "main", "index": 0 }]]
+    },
+    "IF - Error Update": {
+      "main": [
+        [{ "node": "Gmail - Notificar Falla Update (Admin)", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

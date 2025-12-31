@@ -1,0 +1,260 @@
+﻿{
+  "name": "Ej1 - Leads Triage (Webhook → Gmail/Sheets) [Compat]",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "leads-intake"
+      },
+      "id": "n1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 320]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "json": [
+            {
+              "name": "lead",
+              "value": "={{$json.body || $json}}"
+            }
+          ],
+          "string": [
+            {
+              "name": "config.salesEmail",
+              "value": "ventas@tuempresa.com"
+            },
+            {
+              "name": "config.allLeadsSpreadsheetId",
+              "value": "SPREADSHEET_ID_ALL_LEADS"
+            },
+            {
+              "name": "config.allLeadsSheetName",
+              "value": "AllLeads"
+            },
+            {
+              "name": "config.rejectedSpreadsheetId",
+              "value": "SPREADSHEET_ID_RECHAZADOS"
+            },
+            {
+              "name": "config.rejectedSheetName",
+              "value": "Rechazados"
+            }
+          ]
+        }
+      },
+      "id": "n2",
+      "name": "Set (Config + Lead)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [480, 320]
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $json.lead || {};\n\nconst fullName = (lead.fullName ?? lead.name ?? '').toString().trim();\nconst email = (lead.email ?? '').toString().trim().toLowerCase();\nconst country = (lead.country ?? lead.pais ?? '').toString().trim();\nconst company = (lead.company ?? lead.empresa ?? '').toString().trim();\nconst interest = (lead.interest ?? lead.interes ?? '').toString().trim();\nconst message = (lead.message ?? lead.mensaje ?? '').toString().trim();\nconst source = (lead.source ?? lead.origen ?? 'webhook').toString().trim();\n\n// email válido (determinístico)\nconst emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$/i;\nconst emailValid = emailRegex.test(email);\n\n// país normalizado\nconst c = country.toLowerCase();\nlet countryNorm = country;\nif (['argentina', 'ar', 'arg', 'república argentina', 'republica argentina'].includes(c)) countryNorm = 'AR';\n\n// tamaño empresa\nlet companySize = lead.companySize ?? lead.size ?? lead.employees ?? null;\nif (typeof companySize === 'string') {\n  const num = parseInt(companySize.replace(/[^0-9]/g, ''), 10);\n  companySize = Number.isFinite(num) ? num : null;\n}\n\n// dedupe key\nconst dedupeKey = email || `${fullName}|${company}`.toLowerCase();\n\n// dedupe REAL con staticData\nconst sd = this.getWorkflowStaticData('global');\nsd.processed = sd.processed || {};\nconst isDuplicate = !!sd.processed[dedupeKey];\nif (!isDuplicate) sd.processed[dedupeKey] = { firstSeenAt: new Date().toISOString() };\n\nconst createdAt = new Date().toISOString();\n\nreturn [{\n  json: {\n    ...$json,\n    fullName,\n    email,\n    country,\n    countryNorm,\n    company,\n    companySize,\n    interest,\n    message,\n    source,\n    emailValid,\n    dedupeKey,\n    isDuplicate,\n    createdAt\n  }\n}];"
+      },
+      "id": "n3",
+      "name": "Code (Validate + Compute + Dedupe)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 320]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.isDuplicate}}",
+              "operation": "isTrue"
+            }
+          ]
+        },
+        "combinator": "and"
+      },
+      "id": "n4",
+      "name": "IF (Is Duplicate?)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [960, 320]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": [
+            { "name": "status", "value": "DUPLICATE" },
+            { "name": "note", "value": "Duplicado" }
+          ]
+        }
+      },
+      "id": "n4a",
+      "name": "Set (Final DUPLICATE)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [1200, 180]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.emailValid}}",
+              "operation": "isTrue"
+            }
+          ],
+          "string": [
+            {
+              "value1": "={{$json.countryNorm}}",
+              "operation": "equal",
+              "value2": "AR"
+            }
+          ]
+        },
+        "combinator": "and"
+      },
+      "id": "n5",
+      "name": "IF (Approved? AR + Email)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1200, 480]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{$json.config.salesEmail}}",
+        "subject": "={{'Nuevo lead APROBADO: ' + ($json.fullName || 'Sin nombre')}}",
+        "message": "={{'Lead aprobado\\n\\nNombre: ' + $json.fullName + '\\nEmail: ' + $json.email + '\\nPaís: ' + $json.country + '\\nEmpresa: ' + ($json.company || '') + '\\nTamaño: ' + ($json.companySize ?? '') + '\\nInterés: ' + ($json.interest || '') + '\\nMensaje: ' + ($json.message || '') + '\\nOrigen: ' + ($json.source || '') + '\\nFecha: ' + $json.createdAt}}"
+      },
+      "id": "n6",
+      "name": "Gmail (Notify Sales)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [1440, 380]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": [
+            { "name": "status", "value": "APPROVED" },
+            { "name": "note", "value": "" }
+          ]
+        }
+      },
+      "id": "n7",
+      "name": "Set (Final APPROVED)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [1680, 380]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": "={{$json.config.rejectedSpreadsheetId}}",
+        "sheetName": "={{$json.config.rejectedSheetName}}",
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {}
+        }
+      },
+      "id": "n8",
+      "name": "Google Sheets (Append Rejected)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 3,
+      "position": [1440, 620]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": [
+            { "name": "status", "value": "REJECTED" },
+            { "name": "note", "value": "No apto" }
+          ]
+        }
+      },
+      "id": "n9",
+      "name": "Set (Final REJECTED)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [1680, 620]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": "={{$json.config.allLeadsSpreadsheetId}}",
+        "sheetName": "={{$json.config.allLeadsSheetName}}",
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {}
+        }
+      },
+      "id": "n10",
+      "name": "Google Sheets (Append AllLeads)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 3,
+      "position": [1920, 500]
+    },
+    {
+      "parameters": {
+        "responseBody": "={{ { status: $json.status, note: $json.note, dedupeKey: $json.dedupeKey, createdAt: $json.createdAt } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "n11",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2160, 500]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Set (Config + Lead)", "type": "main", "index": 0 }]]
+    },
+    "Set (Config + Lead)": {
+      "main": [[{ "node": "Code (Validate + Compute + Dedupe)", "type": "main", "index": 0 }]]
+    },
+    "Code (Validate + Compute + Dedupe)": {
+      "main": [[{ "node": "IF (Is Duplicate?)", "type": "main", "index": 0 }]]
+    },
+    "IF (Is Duplicate?)": {
+      "main": [
+        [{ "node": "Set (Final DUPLICATE)", "type": "main", "index": 0 }],
+        [{ "node": "IF (Approved? AR + Email)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Set (Final DUPLICATE)": {
+      "main": [[{ "node": "Google Sheets (Append AllLeads)", "type": "main", "index": 0 }]]
+    },
+    "IF (Approved? AR + Email)": {
+      "main": [
+        [{ "node": "Gmail (Notify Sales)", "type": "main", "index": 0 }],
+        [{ "node": "Google Sheets (Append Rejected)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Gmail (Notify Sales)": {
+      "main": [[{ "node": "Set (Final APPROVED)", "type": "main", "index": 0 }]]
+    },
+    "Set (Final APPROVED)": {
+      "main": [[{ "node": "Google Sheets (Append AllLeads)", "type": "main", "index": 0 }]]
+    },
+    "Google Sheets (Append Rejected)": {
+      "main": [[{ "node": "Set (Final REJECTED)", "type": "main", "index": 0 }]]
+    },
+    "Set (Final REJECTED)": {
+      "main": [[{ "node": "Google Sheets (Append AllLeads)", "type": "main", "index": 0 }]]
+    },
+    "Google Sheets (Append AllLeads)": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "timezone": "America/Argentina/Buenos_Aires"
+  }
+}
+

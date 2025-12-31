@@ -1,0 +1,197 @@
+{
+  "name": "M2.1 - Tool Sheets y Structured Output AGENTE IA",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -512,
+        -16
+      ],
+      "id": "31b5d1e9-4a78-492e-98fb-6202ad19818e",
+      "name": "When chat message received",
+      "webhookId": "2a3a0ad6-291d-49d3-a846-d06cb81c5fc2"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.chatInput }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "Sos un asistente que responde a los mensajes de los usuarios con dos oraciones cortas.\n\nCuando el usuario quiera saber información de un producto, extrae el nombre del mismo y llama a la tool \"get_rows\" para devolverle la información correspondiente.\n\nEn la salida devolve tu respuesta en el campo \"respuesta\" y en el campo \"tool\" devolve la tool que utilizas para consultar y responder."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        -320,
+        -16
+      ],
+      "id": "74b77e4b-3c07-4cec-b164-3ef8b9af66e3",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        160
+      ],
+      "id": "6bf435ee-5b40-4c2a-b366-bf68770d4469",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "aRNC9DIDzRN4mYmb",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1id89VFwfwAa05-KZfD7wsjM7Zi5kbGpwHCxY1UceHK8",
+          "mode": "list",
+          "cachedResultName": "Control de Inventario",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1id89VFwfwAa05-KZfD7wsjM7Zi5kbGpwHCxY1UceHK8/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Hoja 1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1id89VFwfwAa05-KZfD7wsjM7Zi5kbGpwHCxY1UceHK8/edit#gid=0"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Producto",
+              "lookupValue": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('values0_Value', ``, 'string') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        -160,
+        160
+      ],
+      "id": "d3b5f3a7-1610-4b12-8406-6bda739b5f3d",
+      "name": "get_rows",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "MmDnkhaNxSsdI16t",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n\t\"respuesta\": \"\",\n    \"tool\": \"\"\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        -32,
+        160
+      ],
+      "id": "b6d2f4dd-b02b-4975-a0bd-f067bae9a83b",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "contextWindowLength": 10
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        -288,
+        160
+      ],
+      "id": "d6331b55-2470-4478-af30-1f2349737c48",
+      "name": "Simple Memory"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_rows": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        []
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "bfed3f56-2581-4378-a4ad-022ff2984c78",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b194d9885c2d25a9641b4b9ae8d58ff975e611027d1e0ceae62e197bb174b261"
+  },
+  "id": "2ufcfzaundpOsAqV",
+  "tags": []
+}

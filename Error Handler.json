@@ -1,0 +1,149 @@
+{
+  "name": "[SYSTEM] Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "error_trigger_1",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [260, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// ClassifyError\nconst errorData = $input.first().json;\n\nconst workflowName = errorData.workflow?.name || 'Unknown';\nconst nodeName = errorData.node?.name || 'Unknown';\nconst errorMessage = errorData.error?.message || 'No message';\nconst httpCode = errorData.error?.httpCode;\nconst executionId = errorData.execution?.id;\nconst timestamp = new Date().toISOString();\n\nconst isRetryable = [408, 429, 500, 502, 503, 504].includes(httpCode);\nconst isClientError = httpCode >= 400 && httpCode < 500;\nconst isServerError = httpCode >= 500;\n\nlet severity = 'low';\nif (isServerError || !httpCode) severity = 'high';\nelse if (isRetryable) severity = 'medium';\n\nconst shouldAlert = severity === 'high' || (errorData.execution?.retryOf && severity === 'medium');\n\nconst crypto = require('crypto');\nconst errorHash = crypto\n  .createHash('md5')\n  .update(workflowName + nodeName + errorMessage)\n  .digest('hex')\n  .slice(0, 8);\n\nreturn [{\n  json: {\n    timestamp,\n    workflowName,\n    nodeName,\n    errorMessage: String(errorMessage).slice(0, 500),\n    httpCode: httpCode ?? 'N/A',\n    executionId: executionId ?? 'N/A',\n    executionUrl: errorData.execution?.url || 'N/A',\n    isRetryable,\n    severity,\n    shouldAlert,\n    errorType: isClientError ? 'client_error' : isServerError ? 'server_error' : 'other',\n    errorHash\n  }\n}];\n"
+      },
+      "id": "code_classify_error",
+      "name": "Code - ClassifyError",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [520, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": "={{ $env.SYSTEM_ERROR_LOG_SHEET_ID || 'REPLACE_WITH_ERROR_LOG_SHEET_ID' }}",
+        "sheetName": "Errors",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $json.timestamp }}",
+            "workflowName": "={{ $json.workflowName }}",
+            "nodeName": "={{ $json.nodeName }}",
+            "errorMessage": "={{ $json.errorMessage }}",
+            "httpCode": "={{ $json.httpCode }}",
+            "severity": "={{ $json.severity }}",
+            "executionUrl": "={{ $json.executionUrl }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "sheets_log_error",
+      "name": "Google Sheets - LogError",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [780, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GOOGLE_SHEETS_CRED_ID",
+          "name": "REPLACE_WITH_GOOGLE_SHEETS_CRED_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.shouldAlert }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if_should_alert",
+      "name": "IF - ShouldAlert",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1040, 300]
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "emailType": "text",
+        "toList": "={{ $env.OPS_EMAIL || 'ops@empresa.com' }}",
+        "subject": "={{ '?? Workflow Error [' + String($json.severity).toUpperCase() + ']: ' + $json.workflowName }}",
+        "message": "={{ 'Error detectado en workflow:\\n\\nWorkflow: ' + $json.workflowName + '\\nNodo: ' + $json.nodeName + '\\nSeveridad: ' + $json.severity + '\\nTipo: ' + $json.errorType + '\\nError: ' + $json.errorMessage + '\\nVer ejecución: ' + $json.executionUrl + '\\nTimestamp: ' + $json.timestamp + '\\nError ID: ' + $json.errorHash + '\\n\\n---\\nEste es un mensaje automático del sistema de monitoreo n8n' }}",
+        "options": {}
+      },
+      "id": "gmail_alert_team",
+      "name": "Gmail Send - AlertTeam",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [1300, 220],
+      "credentials": {
+        "gmailOAuth2Api": {
+          "id": "REPLACE_WITH_GMAIL_CRED_ID",
+          "name": "REPLACE_WITH_GMAIL_CRED_NAME"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Code - ClassifyError",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - ClassifyError": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - LogError",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - LogError": {
+      "main": [
+        [
+          {
+            "node": "IF - ShouldAlert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - ShouldAlert": {
+      "main": [
+        [
+          {
+            "node": "Gmail Send - AlertTeam",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "REPLACE_ME",
+  "id": "REPLACE_ME"
+}

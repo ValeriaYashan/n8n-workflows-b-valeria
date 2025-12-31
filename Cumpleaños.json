@@ -1,0 +1,107 @@
+﻿{
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": [
+          {
+            "hour": 8,
+            "minute": 0
+          }
+        ]
+      },
+      "name": "Trigger Diario",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "sheetId": "TU_SPREADSHEET_ID",
+        "range": "",
+        "sheetName": "Sheet1",
+        "options": {
+          "valueRenderMode": "UNFORMATTED_VALUE"
+        }
+      },
+      "name": "Get Many Rows",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 3,
+      "position": [
+        450,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": "Google Sheets Cumples"
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const today = new Date();\nconst month = (today.getMonth() + 1).toString().padStart(2, '0');\nconst day = today.getDate().toString().padStart(2, '0');\n\nreturn items.filter(item => {\n  const birthday = item.json['Fecha Cumpleaños'];\n  return birthday === `${month}-${day}`;\n});"
+      },
+      "name": "Filtrar Cumpleaños de Hoy",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "tu@correo.com",
+        "toEmail": "={{$json[\"Email\"]}}",
+        "subject": "Feliz cumpleaños, {{$json[\"Nombre\"]}} 🎉",
+        "text": "Hola {{$json[\"Nombre\"]}},\n\n¡Todo el equipo te desea un muy feliz cumpleaños! 🎂🎉\nQue tengas un día espectacular 😄\n\n— Tu equipo"
+      },
+      "name": "Enviar Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [
+        850,
+        300
+      ],
+      "credentials": {
+        "smtp": "Email Cumpleaños"
+      }
+    }
+  ],
+  "connections": {
+    "Trigger Diario": {
+      "main": [
+        [
+          {
+            "node": "Get Many Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Many Rows": {
+      "main": [
+        [
+          {
+            "node": "Filtrar Cumpleaños de Hoy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar Cumpleaños de Hoy": {
+      "main": [
+        [
+          {
+            "node": "Enviar Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

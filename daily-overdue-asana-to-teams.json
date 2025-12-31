@@ -1,0 +1,160 @@
+﻿{
+  "name": "Daily Overdue Tasks (Asana -> Teams)",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyWeek",
+              "hour": 9,
+              "minute": 0,
+              "weekday": "1,2,3,4,5"
+            }
+          ]
+        }
+      },
+      "id": "Cron_Trigger",
+      "name": "Cron",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [260, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://app.asana.com/api/1.0/tasks",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "project",
+              "value": "={{$env.ASANA_PROJECT_ID}}"
+            },
+            {
+              "name": "completed_since",
+              "value": "now"
+            },
+            {
+              "name": "opt_fields",
+              "value": "name,due_on,completed,assignee.name,permalink_url"
+            },
+            {
+              "name": "limit",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.ASANA_TOKEN}}"
+            }
+          ]
+        }
+      },
+      "id": "Asana_HTTP",
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const tz = $env.TIMEZONE || 'America/Argentina/Buenos_Aires';\nconst today = new Date().toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD\n\nconst data = items?.[0]?.json?.data ?? [];\n\nconst overdue = data.filter(t => {\n  const due = t.due_on;\n  const completed = !!t.completed;\n  return !completed && !!due && due < today;\n});\n\nconst groups = {};\nfor (const t of overdue) {\n  const owner = t?.assignee?.name || 'Sin responsable';\n  if (!groups[owner]) groups[owner] = [];\n  groups[owner].push(t);\n}\n\nlet message = `📌 *Tareas vencidas* (hoy: ${today})\\n`;\nif (overdue.length === 0) {\n  message += '\\n✅ No hay tareas vencidas.';\n} else {\n  for (const [owner, list] of Object.entries(groups)) {\n    message += `\\n*${owner}* (${list.length})\\n`;\n    message += list.map(x => `- ${x.name} (venció ${x.due_on}) ${x.permalink_url || ''}`.trim()).join('\\n');\n    message += '\\n';\n  }\n}\n\nreturn [{ json: { today, totalOverdue: overdue.length, message } }];"
+      },
+      "id": "Build_Summary",
+      "name": "Code",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [740, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.totalOverdue}}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "If_Overdue",
+      "name": "IF",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [980, 300]
+    },
+    {
+      "parameters": {
+        "resource": "channelMessage",
+        "operation": "create",
+        "teamId": "={{$env.TEAMS_TEAM_ID}}",
+        "channelId": "={{$env.TEAMS_CHANNEL_ID}}",
+        "message": "={{$json.message}}"
+      },
+      "id": "Teams_Post",
+      "name": "Microsoft Teams",
+      "type": "n8n-nodes-base.microsoftTeams",
+      "typeVersion": 2,
+      "position": [1220, 240]
+    }
+  ],
+  "connections": {
+    "Cron": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "IF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF": {
+      "main": [
+        [
+          {
+            "node": "Microsoft Teams",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionTimeout": 3600,
+    "timezone": "={{$env.TIMEZONE || 'America/Argentina/Buenos_Aires'}}"
+  },
+  "versionId": "1"
+}

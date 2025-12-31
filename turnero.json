@@ -1,0 +1,44 @@
+WF1 (Cron 10m)
+  GCal GetMany (now-30m..now+60d)
+  ForEach event:
+    Sheets Lookup eventId
+    IF not found:
+      Function ParseEvent (name, phone, reason)
+      IF phone valid:
+        Sheets Append (status=booked)
+        WhatsApp SendTemplate confirmacion
+      ELSE:
+        Notify admin + log
+
+  Sheets Read (start ~ now+48h, status booked/pending, reminder_48_sent=false)
+  ForEach row:
+    WhatsApp SendTemplate recordatorio_48h (3 botones)
+    Sheets Update reminder_48_sent=true
+
+  Optional:
+    Sheets Read (start ~ now+24h, status pending)
+    WhatsApp SendTemplate recordatorio_24h
+    Notify admin
+
+WF2 (Webhook inbound WhatsApp)
+  Function NormalizeInbound (phone, action)
+  Sheets Lookup next appointment by phone (status booked/pending)
+  IF action=CONFIRM:
+    Sheets Update confirmed
+    WhatsApp Send "Confirmado"
+  IF action=CANCEL:
+    IF now <= start-24h:
+      GCal Delete eventId
+      Sheets Update cancelled
+      WhatsApp Send "Cancelado"
+    ELSE:
+      WhatsApp Send "No se puede <24h"
+      Notify admin
+  IF action=RESCHEDULE:
+    IF now <= start-24h:
+      GCal Delete eventId
+      Sheets Update reschedule_requested
+      WhatsApp SendTemplate reprogramar_link
+    ELSE:
+      WhatsApp Send "No se puede <24h"
+      Notify admin

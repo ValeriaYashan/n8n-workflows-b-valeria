@@ -1,0 +1,706 @@
+{
+  "name": "AgenteWS",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "f9b79a24-62be-4941-b59d-26580d7f0e7f",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -576,
+        -608
+      ],
+      "id": "9e26ca33-e709-43c3-979f-4b0a9a8d4b21",
+      "name": "Webhook",
+      "webhookId": "f9b79a24-62be-4941-b59d-26580d7f0e7f"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ ($json.Tipo_mensaje || '').replace(/(\\r\\n|\\n|\\r)/g,'').trim().toLowerCase() }}",
+                    "rightValue": "text",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "38d53f6b-f95e-4493-a255-70e3441158e3"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Text"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "37a6c2e8-95a9-47ea-97ad-f79b111d0be1",
+                    "leftValue": "={{ ($json.Tipo_mensaje || '').replace(/(\\r\\n|\\n|\\r)/g,'').trim().toLowerCase() }}",
+                    "rightValue": "audio",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Audio"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "ee52a560-3931-42d4-a9d5-2653c9c7d9ca",
+                    "leftValue": "={{ ($json.Tipo_mensaje || '').replace(/(\\r\\n|\\n|\\r)/g,'').trim().toLowerCase() }}",
+                    "rightValue": "image",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Image"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -128,
+        -640
+      ],
+      "id": "50b29c6c-0336-49a9-a76c-1f7693498352",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.Url_instancia }}/chat/getBase64FromMediaMessage/{{ $json.Nombre_instancia }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apiKey",
+              "value": "={{ $json.ApiKeyInstancia }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "message.key.id",
+              "value": "={{ $json.ID_mensaje }}"
+            },
+            {
+              "name": "=convertToMp4",
+              "value": "={{ Boolean(false) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        96,
+        -608
+      ],
+      "id": "71f09bef-f83b-4557-82de-6cfa34235eff",
+      "name": "Descargar Audio"
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "base64",
+        "options": {
+          "mimeType": "={{ $json.mimetype }}"
+        }
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        320,
+        -608
+      ],
+      "id": "14e9850d-542c-4769-a1ff-10180638bbcb",
+      "name": "Convert to File"
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "operation": "transcribe",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        544,
+        -608
+      ],
+      "id": "4d51596b-686b-4585-ab3f-19a7b91602b8",
+      "name": "Transcribe a recording",
+      "credentials": {
+        "openAiApi": {
+          "id": "7nnNa8chNLVO1xp8",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "base64",
+        "options": {
+          "mimeType": "={{ $json.mimetype }}"
+        }
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        320,
+        -416
+      ],
+      "id": "933576ae-d25a-4c64-9b35-7bd45382b72d",
+      "name": "Convert to File1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.Url_instancia }}/chat/getBase64FromMediaMessage/{{ $json.Nombre_instancia }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apiKey",
+              "value": "={{ $json.ApiKeyInstancia }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "message.key.id",
+              "value": "={{ $json.ID_mensaje }}"
+            },
+            {
+              "name": "=convertToMp4",
+              "value": "={{ Boolean(false) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        96,
+        -416
+      ],
+      "id": "2fd60c6b-ff17-4f3b-9fd9-b6d1a7e7346a",
+      "name": "Descargar Imagen"
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "GPT-4O"
+        },
+        "text": "Analiza la imagen",
+        "inputType": "base64",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        544,
+        -416
+      ],
+      "id": "12b438df-075e-4987-9568-227d8d9ef010",
+      "name": "Analyze image",
+      "credentials": {
+        "openAiApi": {
+          "id": "7nnNa8chNLVO1xp8",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.mensaje }}",
+        "options": {
+          "systemMessage": "Eres **Albert**, un asistente técnico cálido y confiable. Tu misión es ayudar en temas de tecnología, automatización (n8n, APIs, WhatsApp, OpenAI) y soporte.\n\n### Voz y estilo\n- Tono: cercano, directo, profesional; evita jerga innecesaria; 1–2 emojis máx por mensaje (ej: ✅💡).\n- Formato: WhatsApp-friendly → respuestas cortas (3–6 líneas), listas con viñetas cuando ayude.\n- Idioma: responde SIEMPRE en el idioma del usuario. Si detectas español rioplatense, úsalo naturalmente.\n- Personalización: si conoces el nombre del usuario, salúdalo por su nombre.\n\n### Comportamiento\n- Explica paso a paso cuando el usuario pida “cómo”.\n- Si el contexto es escaso: pregunta 1 cosa clave y propone una acción por defecto.\n- No inventes datos; si no tienes info, dilo y sugiere cómo obtenerla.\n- Nunca expongas claves/API keys; recórtalas si es necesario.\n- Si piden algo fuera de alcance, ofrece alternativa segura.\n\n### Respuestas según tipo de entrada\n- Si el usuario envió AUDIO: “Transcribí tu audio, esto entendí: …” y luego la solución.\n- Si envió IMAGEN: describe lo relevante y pasa a la acción.\n- Si envió TEXTO: responde directo y ofrece siguiente paso.\n\n### Finos\n- Prioriza soluciones reproducibles en n8n.\n- Cuando des código o expresiones, usa bloques claros y añade una línea de por qué.\n- Cierra con una pregunta breve que mueva a la acción.\n\nTu objetivo: resolver rápido con claridad, mantener tono amable y eficiente."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.1,
+      "position": [
+        992,
+        -608
+      ],
+      "id": "50d8c683-43f0-4f00-b530-d66f375b90a3",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "gpt-4o"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1024,
+        -384
+      ],
+      "id": "ca63067a-5f94-477a-8067-8976541ff4f9",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "7nnNa8chNLVO1xp8",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "ID_message"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        1152,
+        -384
+      ],
+      "id": "a3358b53-64d1-4610-a461-48d940b1579f",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "18fa16c8-529e-4127-820f-a6ab325c9077",
+              "name": "mensaje",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        768,
+        -608
+      ],
+      "id": "e7b7b788-ef92-4ce3-a01b-ab3b7dea3856",
+      "name": "Audio"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "18fa16c8-529e-4127-820f-a6ab325c9077",
+              "name": "mensaje",
+              "value": "={{ $json.content }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        768,
+        -416
+      ],
+      "id": "6bd91711-5e66-488f-94bd-fe12df94638b",
+      "name": "Imagen"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "934679f0-97e2-4c35-820e-2f45de9fd2a9",
+              "name": "mensaje",
+              "value": "={{ $json.MensajeUsuario }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        768,
+        -800
+      ],
+      "id": "b63e023a-055b-4ff0-9c42-0b7b09fe884f",
+      "name": "Texto"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Informacion').item.json.Url_instancia }}/message/SendText/{{ $('Informacion').item.json.Nombre_instancia }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $('Informacion').item.json.ApiKeyInstancia }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{ $('Informacion').item.json.numero_usuario }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.output }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1392,
+        -608
+      ],
+      "id": "d2f4f9c5-c895-4da7-8e21-9380a4e48555",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "fef17380-b047-4f6e-9805-17f92aba7b9a",
+              "name": "Id",
+              "value": "={{ $json.body.sender.replaceAll('@s.whatsapp.net','') }}",
+              "type": "string"
+            },
+            {
+              "id": "df8216d2-397b-411d-8fd8-0e5a2e6c156b",
+              "name": "numero_usuario",
+              "value": "={{ $json.body.data.key.remoteJid }}",
+              "type": "string"
+            },
+            {
+              "id": "f87017be-f7b0-4a23-86f5-19356e160413",
+              "name": "NombreUsuario",
+              "value": "={{ $json.body.data.pushName }}",
+              "type": "string"
+            },
+            {
+              "id": "0c6c5bad-7043-46c8-a827-a2b6c84a9367",
+              "name": "Url_instancia",
+              "value": "={{ $json.body.server_url }}",
+              "type": "string"
+            },
+            {
+              "id": "504b7afc-04bb-4b0d-a8fe-777345e02b1d",
+              "name": "Nombre_instancia",
+              "value": "={{ $json.body.instance }}",
+              "type": "string"
+            },
+            {
+              "id": "5b1349ce-e460-4404-90be-bcd10daad8cf",
+              "name": "ApiKeyInstancia",
+              "value": "={{ $json.body.apikey }}",
+              "type": "string"
+            },
+            {
+              "id": "787044a1-e08b-4ad3-be2d-9e85b1add4c9",
+              "name": "ID_mensaje",
+              "value": "={{ $json.body.data.key.id }}",
+              "type": "string"
+            },
+            {
+              "id": "97db31cf-03f8-4101-b9ac-689679a533b2",
+              "name": "Hora",
+              "value": "={{ $json.body.date_time }}",
+              "type": "string"
+            },
+            {
+              "id": "f81bf143-c6c5-4cf7-8a6e-3798037367e4",
+              "name": "MensajeUsuario",
+              "value": "={{ $json.body.data.message.conversation }}",
+              "type": "string"
+            },
+            {
+              "id": "cafb93f4-3445-4037-a8f3-a61309725474",
+              "name": "Tipo_mensaje",
+              "value": "=\n{{(\n  $json.body?.data?.message?.audioMessage ? 'audio' :\n  $json.body?.data?.message?.imageMessage ? 'image' :\n  ($json.body?.data?.message?.conversation || $json.body?.data?.message?.extendedTextMessage) ? 'text' :\n  'unknown'\n).replace(/(\\r\\n|\\n|\\r)/g,'').trim().toLowerCase()}}\n",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -352,
+        -608
+      ],
+      "id": "72235d3a-60bd-4f57-a950-65214daf9c32",
+      "name": "Informacion"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Informacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Texto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Descargar Audio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Descargar Imagen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar Audio": {
+      "main": [
+        [
+          {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File": {
+      "main": [
+        [
+          {
+            "node": "Transcribe a recording",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe a recording": {
+      "main": [
+        [
+          {
+            "node": "Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File1": {
+      "main": [
+        [
+          {
+            "node": "Analyze image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar Imagen": {
+      "main": [
+        [
+          {
+            "node": "Convert to File1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze image": {
+      "main": [
+        [
+          {
+            "node": "Imagen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audio": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Imagen": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Texto": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Informacion": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "e2d1e0b9-ae5f-4bb4-b937-2d26da648f66",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "dbfccb8f46589c48b6d4197dcb05fd8d93cc477fa4b94375b0d479dd26ee58e5"
+  },
+  "id": "emIDjFXn6iCKhNv0",
+  "tags": []
+}

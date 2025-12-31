@@ -1,0 +1,238 @@
+{
+  "name": "Solicitud - Confirmación Form (Sheets Hoja 1 -> Gmail)",
+  "nodes": [
+    {
+      "parameters": {
+        "event": "rowAdded",
+        "documentId": "1avgh7bdB-nMxhs5q7M2AJYV5tq0Ev_naSwNA4G4pFbk",
+        "sheetName": "Hoja 1"
+      },
+      "id": "c1111111-1111-4111-8111-111111111111",
+      "name": "Google Sheets Trigger",
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [240, 260]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\nconst adminEmail = 'valeriayashan@gmail.com';\n\nfunction isValidEmail(email) {\n  if (!email) return false;\n  const s = String(email).trim();\n  return s.includes('@') && s.includes('.') && s.length >= 6;\n}\n\nconst email = String(item.Email ?? '').trim();\nconst nombre = String(item.Nombre ?? '').trim();\nconst motivo = String(item.Motivo ?? '').trim();\nconst mensaje = String(item.Mensaje ?? '').trim();\n\nreturn [{\n  json: {\n    ...item,\n    Email: email,\n    Nombre: nombre,\n    Motivo: motivo,\n    Mensaje: mensaje,\n    adminEmail,\n    emailValid: isValidEmail(email),\n    rowNumber: item.rowNumber\n  }\n}];"
+      },
+      "id": "c2222222-2222-4222-8222-222222222222",
+      "name": "Code - Normalizar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 260]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.emailValid}}",
+              "operation": "isTrue"
+            }
+          ]
+        }
+      },
+      "id": "c3333333-3333-4333-8333-333333333333",
+      "name": "IF - Email válido",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [720, 260]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "toList": "={{$json.Email}}",
+        "subject": "={{'Recibimos tu solicitud' + ($json.Motivo ? ' - ' + $json.Motivo : '')}}",
+        "message": "={{'Hola ' + ($json.Nombre || '') + ',\\n\\nRecibimos tu solicitud.\\n\\nMotivo: ' + ($json.Motivo || '-') + '\\nMensaje: ' + ($json.Mensaje || '-') + '\\n\\nTe vamos a responder a la brevedad.\\n\\nGracias.\\n'}}"
+      },
+      "id": "c4444444-4444-4444-8444-444444444444",
+      "name": "Gmail - Confirmación Cliente",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [980, 170],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{!!$json.error}}",
+              "operation": "isTrue"
+            }
+          ]
+        }
+      },
+      "id": "c5555555-5555-4555-8555-555555555555",
+      "name": "IF - Error Gmail Cliente",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1220, 170]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "toList": "={{$json.adminEmail}}",
+        "subject": "={{'[Solicitud] Nueva respuesta - ' + ($json.Motivo || 'Sin motivo')}}",
+        "message": "={{'Nueva solicitud recibida:\\n\\nTimestamp: ' + ($json.Timestamp || '-') + '\\nNombre: ' + ($json.Nombre || '-') + '\\nEmail: ' + ($json.Email || '-') + '\\nMotivo: ' + ($json.Motivo || '-') + '\\nMensaje: ' + ($json.Mensaje || '-') + '\\n\\nEstado actual: ' + ($json.Estado || '-') + '\\n'}}"
+      },
+      "id": "c6666666-6666-4666-8666-666666666666",
+      "name": "Gmail - Aviso Interno",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [1460, 170],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{!!$json.error}}",
+              "operation": "isTrue"
+            }
+          ]
+        }
+      },
+      "id": "c7777777-7777-4777-8777-777777777777",
+      "name": "IF - Error Gmail Interno",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1700, 170]
+    },
+    {
+      "parameters": {
+        "documentId": "1avgh7bdB-nMxhs5q7M2AJYV5tq0Ev_naSwNA4G4pFbk",
+        "sheetName": "Hoja 1",
+        "operation": "update",
+        "rowNumber": "={{$json.rowNumber}}",
+        "dataToSend": {
+          "Estado": "Confirmado",
+          "Fecha Confirmación": "={{$now.toISO()}}",
+          "Error": ""
+        }
+      },
+      "id": "c8888888-8888-4888-8888-888888888888",
+      "name": "Google Sheets - Marcar Confirmado",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1940, 170]
+    },
+    {
+      "parameters": {
+        "documentId": "1avgh7bdB-nMxhs5q7M2AJYV5tq0Ev_naSwNA4G4pFbk",
+        "sheetName": "Hoja 1",
+        "operation": "update",
+        "rowNumber": "={{$json.rowNumber}}",
+        "dataToSend": {
+          "Estado": "Error",
+          "Fecha Confirmación": "",
+          "Error": "={{'Error Gmail Cliente: ' + JSON.stringify($json.error)}}"
+        }
+      },
+      "id": "c9999999-9999-4999-8999-999999999999",
+      "name": "Google Sheets - Error Cliente",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1460, 340]
+    },
+    {
+      "parameters": {
+        "documentId": "1avgh7bdB-nMxhs5q7M2AJYV5tq0Ev_naSwNA4G4pFbk",
+        "sheetName": "Hoja 1",
+        "operation": "update",
+        "rowNumber": "={{$json.rowNumber}}",
+        "dataToSend": {
+          "Estado": "Error",
+          "Fecha Confirmación": "",
+          "Error": "={{'Error Gmail Interno: ' + JSON.stringify($json.error)}}"
+        }
+      },
+      "id": "ca000000-0000-4000-8000-000000000000",
+      "name": "Google Sheets - Error Interno",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1940, 340]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "toList": "={{$json.adminEmail}}",
+        "subject": "={{'[Solicitud] Email inválido - ' + ($json.Nombre || 'Sin nombre')}}",
+        "message": "={{'Se recibió una solicitud con Email inválido.\\n\\nTimestamp: ' + ($json.Timestamp || '-') + '\\nNombre: ' + ($json.Nombre || '-') + '\\nEmail: ' + ($json.Email || '-') + '\\nMotivo: ' + ($json.Motivo || '-') + '\\nMensaje: ' + ($json.Mensaje || '-') + '\\n'}}"
+      },
+      "id": "ca111111-1111-4111-8111-111111111112",
+      "name": "Gmail - Aviso Interno (Email inválido)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [980, 420],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "documentId": "1avgh7bdB-nMxhs5q7M2AJYV5tq0Ev_naSwNA4G4pFbk",
+        "sheetName": "Hoja 1",
+        "operation": "update",
+        "rowNumber": "={{$json.rowNumber}}",
+        "dataToSend": {
+          "Estado": "Error",
+          "Fecha Confirmación": "",
+          "Error": "Email inválido"
+        }
+      },
+      "id": "ca222222-2222-4222-8222-222222222223",
+      "name": "Google Sheets - Marcar Email inválido",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1220, 420]
+    }
+  ],
+  "connections": {
+    "Google Sheets Trigger": {
+      "main": [[{ "node": "Code - Normalizar", "type": "main", "index": 0 }]]
+    },
+    "Code - Normalizar": {
+      "main": [[{ "node": "IF - Email válido", "type": "main", "index": 0 }]]
+    },
+    "IF - Email válido": {
+      "main": [
+        [{ "node": "Gmail - Confirmación Cliente", "type": "main", "index": 0 }],
+        [{ "node": "Gmail - Aviso Interno (Email inválido)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Gmail - Confirmación Cliente": {
+      "main": [[{ "node": "IF - Error Gmail Cliente", "type": "main", "index": 0 }]]
+    },
+    "IF - Error Gmail Cliente": {
+      "main": [
+        [{ "node": "Google Sheets - Error Cliente", "type": "main", "index": 0 }],
+        [{ "node": "Gmail - Aviso Interno", "type": "main", "index": 0 }]
+      ]
+    },
+    "Gmail - Aviso Interno": {
+      "main": [[{ "node": "IF - Error Gmail Interno", "type": "main", "index": 0 }]]
+    },
+    "IF - Error Gmail Interno": {
+      "main": [
+        [{ "node": "Google Sheets - Error Interno", "type": "main", "index": 0 }],
+        [{ "node": "Google Sheets - Marcar Confirmado", "type": "main", "index": 0 }]
+      ]
+    },
+    "Gmail - Aviso Interno (Email inválido)": {
+      "main": [[{ "node": "Google Sheets - Marcar Email inválido", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": ["solicitud", "google-sheets", "gmail", "form"]
+}
